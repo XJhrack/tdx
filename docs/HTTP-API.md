@@ -92,12 +92,14 @@ go run ./cmd/server [-addr :8001] [-pool 16] [-data ./data]
 #### `GET /api/codes/all` — 全量代码列表
 - 参数：`exchange`（必填）
 - 响应 `data`：同 `/api/codes`
+- 说明：服务端优先读取启动时维护的本地 `codes.db` 代码表缓存；缓存为空时才回退到通达信主站全量拉取。
 
 #### `GET /api/codes/stocks` — 全部股票代码
 #### `GET /api/codes/etfs` — 全部 ETF 代码
 #### `GET /api/codes/indexes` — 全部指数代码
 - 参数：无
 - 响应 `data`：`{ "list": ["sh600000", "sz000001", ...] }`
+- 说明：同样优先读取本地 `codes.db` 缓存，避免每次请求重新串行拉取沪 / 深 / 北全市场代码表。
 
 ---
 

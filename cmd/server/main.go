@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -193,6 +194,9 @@ func hCodesAll(pool *reliablePool, q url.Values) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cached, ok := cachedCodesAll(ex); ok {
+		return cached, nil
+	}
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		resp, err := c.GetCodeAll(ex)
 		if err != nil {
@@ -203,6 +207,9 @@ func hCodesAll(pool *reliablePool, q url.Values) (any, error) {
 }
 
 func hStockCodes(pool *reliablePool, _ url.Values) (any, error) {
+	if cached, ok := cachedCodeList(func(c tdx.ICodes) []string { return c.GetStockCodes() }); ok {
+		return toList(cached), nil
+	}
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		codes, err := c.GetStockCodeAll()
 		if err != nil {
@@ -213,6 +220,9 @@ func hStockCodes(pool *reliablePool, _ url.Values) (any, error) {
 }
 
 func hETFCodes(pool *reliablePool, _ url.Values) (any, error) {
+	if cached, ok := cachedCodeList(func(c tdx.ICodes) []string { return c.GetETFCodes() }); ok {
+		return toList(cached), nil
+	}
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		codes, err := c.GetETFCodeAll()
 		if err != nil {
@@ -223,6 +233,9 @@ func hETFCodes(pool *reliablePool, _ url.Values) (any, error) {
 }
 
 func hIndexCodes(pool *reliablePool, _ url.Values) (any, error) {
+	if cached, ok := cachedIndexCodes(); ok {
+		return toList(cached), nil
+	}
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		codes, err := c.GetIndexCodeAll()
 		if err != nil {
@@ -230,6 +243,60 @@ func hIndexCodes(pool *reliablePool, _ url.Values) (any, error) {
 		}
 		return toList(codes), nil
 	})
+}
+
+func cachedCodesAll(ex protocol.Exchange) (any, bool) {
+	codes := tdx.DefaultCodes
+	if codes == nil {
+		return nil, false
+	}
+	prefix := ex.String()
+	list := make([]map[string]any, 0)
+	for fullCode, model := range codes.Iter() {
+		if model == nil {
+			continue
+		}
+		if model.Exchange != prefix && !strings.HasPrefix(fullCode, prefix) {
+			continue
+		}
+		list = append(list, map[string]any{
+			"name":      model.Name,
+			"code":      model.Code,
+			"multiple":  model.Multiple,
+			"decimal":   model.Decimal,
+			"lastPrice": model.LastPrice,
+		})
+	}
+	if len(list) == 0 {
+		return nil, false
+	}
+	return map[string]any{"count": len(list), "list": list}, true
+}
+
+func cachedCodeList(load func(tdx.ICodes) []string) ([]string, bool) {
+	codes := tdx.DefaultCodes
+	if codes == nil {
+		return nil, false
+	}
+	list := load(codes)
+	if len(list) == 0 {
+		return nil, false
+	}
+	return append([]string(nil), list...), true
+}
+
+func cachedIndexCodes() ([]string, bool) {
+	list, ok := cachedCodeList(func(c tdx.ICodes) []string { return c.GetIndexCodes() })
+	if !ok {
+		return nil, false
+	}
+	const bjIndex = "bj899050"
+	for _, code := range list {
+		if code == bjIndex {
+			return list, true
+		}
+	}
+	return append([]string{bjIndex}, list...), true
 }
 
 func hQuote(pool *reliablePool, q url.Values) (any, error) {
@@ -777,12 +844,20 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
 		log.Printf("json encode: %v", err)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"code":1,"msg":"internal error"}` + "\n"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("json write: %v", err)
 	}
 }
 

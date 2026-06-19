@@ -263,6 +263,56 @@ func TestExtendedDTOsUseCamelCase(t *testing.T) {
 	}
 }
 
+func TestCodeListHandlersUseDefaultCodesCache(t *testing.T) {
+	old := tdx.DefaultCodes
+	t.Cleanup(func() { tdx.DefaultCodes = old })
+
+	codes := tdx.NewCodesBase()
+	codes.Update([]*tdx.CodeModel{
+		{Exchange: "sh", Code: "600000", Name: "stock", Multiple: 100, Decimal: 2, LastPrice: 10},
+		{Exchange: "sh", Code: "510300", Name: "etf", Multiple: 100, Decimal: 3, LastPrice: 4.2},
+		{Exchange: "sh", Code: "000001", Name: "index", Multiple: 100, Decimal: 2, LastPrice: 3000},
+		{Exchange: "sz", Code: "000001", Name: "stock2", Multiple: 100, Decimal: 2, LastPrice: 11},
+	})
+	tdx.DefaultCodes = codes
+
+	all, err := hCodesAll(nil, url.Values{"exchange": {"sh"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allMap := all.(map[string]any)
+	if allMap["count"] != 3 {
+		t.Fatalf("unexpected cached sh count: %#v", allMap)
+	}
+
+	stocks, err := hStockCodes(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stockList := stocks.(map[string]any)["list"].([]string)
+	if fmt.Sprint(stockList) != "[sh600000 sz000001]" {
+		t.Fatalf("unexpected stock list: %v", stockList)
+	}
+
+	etfs, err := hETFCodes(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	etfList := etfs.(map[string]any)["list"].([]string)
+	if fmt.Sprint(etfList) != "[sh510300]" {
+		t.Fatalf("unexpected etf list: %v", etfList)
+	}
+
+	indexes, err := hIndexCodes(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexList := indexes.(map[string]any)["list"].([]string)
+	if fmt.Sprint(indexList) != "[bj899050 sh000001]" {
+		t.Fatalf("unexpected index list: %v", indexList)
+	}
+}
+
 func TestReqErrStatus(t *testing.T) {
 	var re reqErr
 	if !errors.As(badReq("bad"), &re) {
