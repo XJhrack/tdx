@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -43,7 +45,7 @@ func main() {
 	flag.Parse()
 	serverDataDir = *dataDir
 
-	pool, err := tdx.NewPool(dialClient, *poolSize)
+	pool, err := newReliablePool(dialClient, *poolSize)
 	if err != nil {
 		log.Fatalf("init pool: %v", err)
 	}
@@ -103,8 +105,8 @@ func initCodesCache(dataDir string) error {
 
 // --- routing ---
 
-func registerRoutes(mux *http.ServeMux, pool *tdx.Pool) {
-	reg := func(pattern string, fn func(*tdx.Pool, url.Values) (any, error)) {
+func registerRoutes(mux *http.ServeMux, pool *reliablePool) {
+	reg := func(pattern string, fn func(*reliablePool, url.Values) (any, error)) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
 				writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -150,11 +152,11 @@ func registerRoutes(mux *http.ServeMux, pool *tdx.Pool) {
 
 // --- handlers ---
 
-func hPing(_ *tdx.Pool, _ url.Values) (any, error) {
+func hPing(_ *reliablePool, _ url.Values) (any, error) {
 	return "pong", nil
 }
 
-func hCount(pool *tdx.Pool, q url.Values) (any, error) {
+func hCount(pool *reliablePool, q url.Values) (any, error) {
 	ex, err := parseExchange(q.Get("exchange"))
 	if err != nil {
 		return nil, err
@@ -168,7 +170,7 @@ func hCount(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hCodes(pool *tdx.Pool, q url.Values) (any, error) {
+func hCodes(pool *reliablePool, q url.Values) (any, error) {
 	ex, err := parseExchange(q.Get("exchange"))
 	if err != nil {
 		return nil, err
@@ -186,7 +188,7 @@ func hCodes(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hCodesAll(pool *tdx.Pool, q url.Values) (any, error) {
+func hCodesAll(pool *reliablePool, q url.Values) (any, error) {
 	ex, err := parseExchange(q.Get("exchange"))
 	if err != nil {
 		return nil, err
@@ -200,7 +202,7 @@ func hCodesAll(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hStockCodes(pool *tdx.Pool, _ url.Values) (any, error) {
+func hStockCodes(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		codes, err := c.GetStockCodeAll()
 		if err != nil {
@@ -210,7 +212,7 @@ func hStockCodes(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hETFCodes(pool *tdx.Pool, _ url.Values) (any, error) {
+func hETFCodes(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		codes, err := c.GetETFCodeAll()
 		if err != nil {
@@ -220,7 +222,7 @@ func hETFCodes(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hIndexCodes(pool *tdx.Pool, _ url.Values) (any, error) {
+func hIndexCodes(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		codes, err := c.GetIndexCodeAll()
 		if err != nil {
@@ -230,7 +232,7 @@ func hIndexCodes(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hQuote(pool *tdx.Pool, q url.Values) (any, error) {
+func hQuote(pool *reliablePool, q url.Values) (any, error) {
 	codes, err := parseCodes(q.Get("codes"))
 	if err != nil {
 		return nil, err
@@ -244,7 +246,7 @@ func hQuote(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hMinute(pool *tdx.Pool, q url.Values) (any, error) {
+func hMinute(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -258,7 +260,7 @@ func hMinute(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hMinuteHistory(pool *tdx.Pool, q url.Values) (any, error) {
+func hMinuteHistory(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -276,7 +278,7 @@ func hMinuteHistory(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hTrade(pool *tdx.Pool, q url.Values) (any, error) {
+func hTrade(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -298,7 +300,7 @@ func hTrade(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hTradeAll(pool *tdx.Pool, q url.Values) (any, error) {
+func hTradeAll(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -312,7 +314,7 @@ func hTradeAll(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hTradeHistory(pool *tdx.Pool, q url.Values) (any, error) {
+func hTradeHistory(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -338,7 +340,7 @@ func hTradeHistory(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hTradeHistoryDay(pool *tdx.Pool, q url.Values) (any, error) {
+func hTradeHistoryDay(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -356,7 +358,7 @@ func hTradeHistoryDay(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hKline(pool *tdx.Pool, q url.Values) (any, error) {
+func hKline(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -382,7 +384,7 @@ func hKline(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hKlineAll(pool *tdx.Pool, q url.Values) (any, error) {
+func hKlineAll(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -400,7 +402,7 @@ func hKlineAll(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hIndexKline(pool *tdx.Pool, q url.Values) (any, error) {
+func hIndexKline(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -426,7 +428,7 @@ func hIndexKline(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hIndexKlineAll(pool *tdx.Pool, q url.Values) (any, error) {
+func hIndexKlineAll(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -444,7 +446,7 @@ func hIndexKlineAll(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hAuction(pool *tdx.Pool, q url.Values) (any, error) {
+func hAuction(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -458,7 +460,7 @@ func hAuction(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hGbbq(pool *tdx.Pool, q url.Values) (any, error) {
+func hGbbq(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -475,61 +477,202 @@ func hGbbq(pool *tdx.Pool, q url.Values) (any, error) {
 // --- pool helper ---
 
 // dialClient creates a fresh TDX connection (same options as pool init).
-var dialClient = func() (*tdx.Client, error) {
-	return tdx.DialDefault(tdx.WithLevel(tdx.LevelError))
-}
-
-// replaceConn closes the old connection and dials a fresh one back into the pool.
-// Retries up to 3 times with backoff to avoid permanent slot loss.
-func replaceConn(pool *tdx.Pool, old *tdx.Client) {
-	old.Close()
-	for i := 0; i < 3; i++ {
-		if nc, err := dialClient(); err == nil {
-			pool.Put(nc)
-			return
-		} else {
-			log.Printf("pool redial attempt %d: %v", i+1, err)
-		}
-		time.Sleep(time.Duration(i+1) * time.Second)
+var (
+	dialHostCursor atomic.Uint64
+	dialClient     = func() (*tdx.Client, error) {
+		return tdx.DialHostsRange(rotateHosts(tdx.Hosts), tdx.WithRedial(), tdx.WithLevel(tdx.LevelError))
 	}
-	log.Printf("pool redial failed after 3 attempts, slot lost")
+)
+
+const (
+	defaultPoolGetTimeout = 5 * time.Second
+	defaultRequestRetries = 3
+	defaultRedialRetries  = 2
+	defaultRedialBackoff  = 200 * time.Millisecond
+)
+
+type reliablePool struct {
+	ch             chan *tdx.Client
+	dial           func() (*tdx.Client, error)
+	getTimeout     time.Duration
+	requestRetries int
+	redialRetries  int
+	redialBackoff  time.Duration
+	closed         chan struct{}
+	closeOnce      sync.Once
 }
 
-// doPool borrows a connection, runs fn, and returns the result.
-// On connection error it retries once with a fresh connection before giving up.
-func doPool(pool *tdx.Pool, fn func(*tdx.Client) (any, error)) (any, error) {
+func newReliablePool(dial func() (*tdx.Client, error), number int) (*reliablePool, error) {
+	if number <= 0 {
+		number = 1
+	}
+	pool := &reliablePool{
+		ch:             make(chan *tdx.Client, number),
+		dial:           dial,
+		getTimeout:     defaultPoolGetTimeout,
+		requestRetries: defaultRequestRetries,
+		redialRetries:  defaultRedialRetries,
+		redialBackoff:  defaultRedialBackoff,
+		closed:         make(chan struct{}),
+	}
+	for i := 0; i < number; i++ {
+		c, err := pool.dialWithRetries()
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+		pool.ch <- c
+	}
+	return pool, nil
+}
+
+func rotateHosts(hosts []string) []string {
+	if len(hosts) == 0 {
+		return nil
+	}
+	start := int(dialHostCursor.Add(1)-1) % len(hosts)
+	out := make([]string, 0, len(hosts))
+	out = append(out, hosts[start:]...)
+	out = append(out, hosts[:start]...)
+	return out
+}
+
+func (p *reliablePool) Get() (*tdx.Client, error) {
+	if p == nil {
+		return nil, errors.New("tdx pool not initialized")
+	}
+	timer := time.NewTimer(p.getTimeout)
+	defer timer.Stop()
+	select {
+	case <-p.closed:
+		return nil, errors.New("tdx pool closed")
+	case c := <-p.ch:
+		if c == nil {
+			return nil, errors.New("tdx pool returned nil connection")
+		}
+		return c, nil
+	case <-timer.C:
+		return nil, fmt.Errorf("tdx pool get timeout after %s", p.getTimeout)
+	}
+}
+
+func (p *reliablePool) Put(c *tdx.Client) {
+	if c == nil {
+		return
+	}
+	select {
+	case <-p.closed:
+		closeClient(c)
+		return
+	default:
+	}
+	select {
+	case <-p.closed:
+		closeClient(c)
+	case p.ch <- c:
+	default:
+		closeClient(c)
+	}
+}
+
+func (p *reliablePool) Close() {
+	if p == nil {
+		return
+	}
+	p.closeOnce.Do(func() {
+		close(p.closed)
+		for {
+			select {
+			case c := <-p.ch:
+				closeClient(c)
+			default:
+				return
+			}
+		}
+	})
+}
+
+func (p *reliablePool) dialWithRetries() (*tdx.Client, error) {
+	var lastErr error
+	retries := p.redialRetries
+	if retries <= 0 {
+		retries = 1
+	}
+	for i := 0; i < retries; i++ {
+		c, err := p.dial()
+		if err == nil {
+			return c, nil
+		}
+		lastErr = err
+		if i < retries-1 && p.redialBackoff > 0 {
+			time.Sleep(time.Duration(i+1) * p.redialBackoff)
+		}
+	}
+	return nil, lastErr
+}
+
+func (p *reliablePool) refillAsync(reason error) {
+	if p == nil {
+		return
+	}
+	go func() {
+		c, err := p.dialWithRetries()
+		if err != nil {
+			log.Printf("pool refill failed after request error %v: %v", reason, err)
+			return
+		}
+		p.Put(c)
+	}()
+}
+
+func closeClient(c *tdx.Client) {
+	if c != nil && c.Client != nil {
+		c.Close()
+	}
+}
+
+// doPool runs a request on a pooled TDX connection.
+// Network/protocol errors poison the current connection, so they are retried on
+// freshly dialed connections instead of returning broken clients to the pool.
+func doPool(pool *reliablePool, fn func(*tdx.Client) (any, error)) (any, error) {
 	c, err := pool.Get()
 	if err != nil {
 		return nil, err
 	}
-	result, err := fn(c)
-	if err == nil {
-		pool.Put(c)
-		return result, nil
+	retries := pool.requestRetries
+	if retries <= 0 {
+		retries = 1
 	}
-
-	// First attempt failed — replace the bad connection and retry once.
-	var re reqErr
-	if errors.As(err, &re) {
-		// Business-level error (bad params etc.), connection is fine.
-		pool.Put(c)
-		return nil, err
+	var lastErr error
+	for attempt := 1; attempt <= retries; attempt++ {
+		result, err := fn(c)
+		if err == nil {
+			pool.Put(c)
+			return result, nil
+		}
+		var re reqErr
+		if errors.As(err, &re) {
+			pool.Put(c)
+			return nil, err
+		}
+		lastErr = err
+		closeClient(c)
+		c = nil
+		if attempt == retries {
+			break
+		}
+		c, err = pool.dialWithRetries()
+		if err != nil {
+			log.Printf("pool sync redial failed after request error %v: %v", lastErr, err)
+			pool.refillAsync(lastErr)
+			c, err = pool.Get()
+			if err != nil {
+				return nil, lastErr
+			}
+		}
 	}
-
-	go replaceConn(pool, c)
-
-	// Retry with a different connection.
-	c2, err2 := pool.Get()
-	if err2 != nil {
-		return nil, err // return original error
-	}
-	result, err2 = fn(c2)
-	if err2 != nil {
-		go replaceConn(pool, c2)
-		return nil, err2
-	}
-	pool.Put(c2)
-	return result, nil
+	pool.refillAsync(lastErr)
+	return nil, lastErr
 }
 
 // --- param parsing ---

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -14,7 +15,7 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-func registerExtendedRoutes(reg func(string, func(*tdx.Pool, url.Values) (any, error))) {
+func registerExtendedRoutes(reg func(string, func(*reliablePool, url.Values) (any, error))) {
 	reg("/api/finance", hFinance)
 	reg("/api/company/categories", hCompanyCategories)
 	reg("/api/company/content", hCompanyContent)
@@ -53,7 +54,7 @@ func registerExtendedRoutes(reg func(string, func(*tdx.Pool, url.Values) (any, e
 	reg("/api/ex/bars/range", hExBarsRange)
 }
 
-func hFinance(pool *tdx.Pool, q url.Values) (any, error) {
+func hFinance(pool *reliablePool, q url.Values) (any, error) {
 	ex, code, err := parseExchangeCode(q)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func hFinance(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hCompanyCategories(pool *tdx.Pool, q url.Values) (any, error) {
+func hCompanyCategories(pool *reliablePool, q url.Values) (any, error) {
 	ex, code, err := parseExchangeCode(q)
 	if err != nil {
 		return nil, err
@@ -73,7 +74,7 @@ func hCompanyCategories(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hCompanyContent(pool *tdx.Pool, q url.Values) (any, error) {
+func hCompanyContent(pool *reliablePool, q url.Values) (any, error) {
 	ex, code, err := parseExchangeCode(q)
 	if err != nil {
 		return nil, err
@@ -102,7 +103,7 @@ func hCompanyContent(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hBlockFile(pool *tdx.Pool, q url.Values) (any, error) {
+func hBlockFile(pool *reliablePool, q url.Values) (any, error) {
 	file, err := parseFile(q.Get("file"))
 	if err != nil {
 		return nil, err
@@ -116,7 +117,7 @@ func hBlockFile(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hBlockData(pool *tdx.Pool, q url.Values) (any, error) {
+func hBlockData(pool *reliablePool, q url.Values) (any, error) {
 	file, err := parseBlockFile(q.Get("file"))
 	if err != nil {
 		return nil, err
@@ -130,7 +131,7 @@ func hBlockData(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hBlockDataWithIndex(pool *tdx.Pool, q url.Values) (any, error) {
+func hBlockDataWithIndex(pool *reliablePool, q url.Values) (any, error) {
 	file, err := parseBlockFile(q.Get("file"))
 	if err != nil {
 		return nil, err
@@ -144,7 +145,7 @@ func hBlockDataWithIndex(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hReportFile(pool *tdx.Pool, q url.Values) (any, error) {
+func hReportFile(pool *reliablePool, q url.Values) (any, error) {
 	file, err := parseFile(q.Get("file"))
 	if err != nil {
 		return nil, err
@@ -158,7 +159,7 @@ func hReportFile(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hZHBFiles(pool *tdx.Pool, _ url.Values) (any, error) {
+func hZHBFiles(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		files, err := c.GetZHBFiles()
 		if err != nil {
@@ -172,7 +173,7 @@ func hZHBFiles(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hTdxZs(pool *tdx.Pool, _ url.Values) (any, error) {
+func hTdxZs(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		list, err := c.GetTdxZs()
 		if err != nil {
@@ -182,7 +183,7 @@ func hTdxZs(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hTdxBk(pool *tdx.Pool, _ url.Values) (any, error) {
+func hTdxBk(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		list, err := c.GetTdxBk()
 		if err != nil {
@@ -192,7 +193,7 @@ func hTdxBk(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hTdxHy(pool *tdx.Pool, _ url.Values) (any, error) {
+func hTdxHy(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		list, err := c.GetTdxHy()
 		if err != nil {
@@ -202,7 +203,7 @@ func hTdxHy(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hTdxStat(pool *tdx.Pool, _ url.Values) (any, error) {
+func hTdxStat(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		list, err := c.GetTdxStat()
 		if err != nil {
@@ -212,7 +213,7 @@ func hTdxStat(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hTdxStat2(pool *tdx.Pool, _ url.Values) (any, error) {
+func hTdxStat2(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		list, err := c.GetTdxStat2()
 		if err != nil {
@@ -222,7 +223,7 @@ func hTdxStat2(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hStockBlockIndex(pool *tdx.Pool, _ url.Values) (any, error) {
+func hStockBlockIndex(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		stats, err := c.GetTdxStat2()
 		if err != nil {
@@ -233,7 +234,7 @@ func hStockBlockIndex(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hXgsg(pool *tdx.Pool, _ url.Values) (any, error) {
+func hXgsg(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		list, err := c.GetXgsg()
 		if err != nil {
@@ -243,7 +244,7 @@ func hXgsg(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hGbbqAll(pool *tdx.Pool, _ url.Values) (any, error) {
+func hGbbqAll(pool *reliablePool, _ url.Values) (any, error) {
 	return doPool(pool, func(c *tdx.Client) (any, error) {
 		resp, err := c.GetGbbqAll()
 		if err != nil {
@@ -253,7 +254,7 @@ func hGbbqAll(pool *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hGbbqEquity(_ *tdx.Pool, q url.Values) (any, error) {
+func hGbbqEquity(_ *reliablePool, q url.Values) (any, error) {
 	code, date, err := parseCodeDate(q)
 	if err != nil {
 		return nil, err
@@ -265,7 +266,7 @@ func hGbbqEquity(_ *tdx.Pool, q url.Values) (any, error) {
 	return gb.GetEquity(code, date), nil
 }
 
-func hGbbqXRXD(_ *tdx.Pool, q url.Values) (any, error) {
+func hGbbqXRXD(_ *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -278,7 +279,7 @@ func hGbbqXRXD(_ *tdx.Pool, q url.Values) (any, error) {
 	return map[string]any{"count": len(list), "list": toXRXDs(list)}, nil
 }
 
-func hGbbqFactors(pool *tdx.Pool, q url.Values) (any, error) {
+func hGbbqFactors(pool *reliablePool, q url.Values) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -297,7 +298,7 @@ func hGbbqFactors(pool *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hGbbqTurnover(_ *tdx.Pool, q url.Values) (any, error) {
+func hGbbqTurnover(_ *reliablePool, q url.Values) (any, error) {
 	code, date, err := parseCodeDate(q)
 	if err != nil {
 		return nil, err
@@ -316,15 +317,15 @@ func hGbbqTurnover(_ *tdx.Pool, q url.Values) (any, error) {
 	return map[string]any{"turnover": gb.GetTurnover(code, date, volume)}, nil
 }
 
-func hQFQKlineDay(pool *tdx.Pool, q url.Values) (any, error) {
+func hQFQKlineDay(pool *reliablePool, q url.Values) (any, error) {
 	return hFQKlineDay(pool, q, true)
 }
 
-func hHFQKlineDay(pool *tdx.Pool, q url.Values) (any, error) {
+func hHFQKlineDay(pool *reliablePool, q url.Values) (any, error) {
 	return hFQKlineDay(pool, q, false)
 }
 
-func hFQKlineDay(pool *tdx.Pool, q url.Values, qfq bool) (any, error) {
+func hFQKlineDay(pool *reliablePool, q url.Values, qfq bool) (any, error) {
 	code, err := parseCode(q.Get("code"))
 	if err != nil {
 		return nil, err
@@ -348,7 +349,7 @@ func hFQKlineDay(pool *tdx.Pool, q url.Values, qfq bool) (any, error) {
 	})
 }
 
-func hExMarkets(_ *tdx.Pool, _ url.Values) (any, error) {
+func hExMarkets(_ *reliablePool, _ url.Values) (any, error) {
 	return doEx(func(c *tdx.Client) (any, error) {
 		list, err := c.ExMarkets()
 		if err != nil {
@@ -358,7 +359,7 @@ func hExMarkets(_ *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hExCount(_ *tdx.Pool, _ url.Values) (any, error) {
+func hExCount(_ *reliablePool, _ url.Values) (any, error) {
 	return doEx(func(c *tdx.Client) (any, error) {
 		n, err := c.ExCount()
 		if err != nil {
@@ -368,7 +369,7 @@ func hExCount(_ *tdx.Pool, _ url.Values) (any, error) {
 	})
 }
 
-func hExInstruments(_ *tdx.Pool, q url.Values) (any, error) {
+func hExInstruments(_ *reliablePool, q url.Values) (any, error) {
 	start, err := pUint32(q, "start", 0)
 	if err != nil {
 		return nil, err
@@ -386,7 +387,7 @@ func hExInstruments(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExQuote(_ *tdx.Pool, q url.Values) (any, error) {
+func hExQuote(_ *reliablePool, q url.Values) (any, error) {
 	market, code, err := parseExMarketCode(q)
 	if err != nil {
 		return nil, err
@@ -396,7 +397,7 @@ func hExQuote(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExQuoteList(_ *tdx.Pool, q url.Values) (any, error) {
+func hExQuoteList(_ *reliablePool, q url.Values) (any, error) {
 	market, err := pUint8Required(q, "market")
 	if err != nil {
 		return nil, err
@@ -422,7 +423,7 @@ func hExQuoteList(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExBars(_ *tdx.Pool, q url.Values) (any, error) {
+func hExBars(_ *reliablePool, q url.Values) (any, error) {
 	market, code, err := parseExMarketCode(q)
 	if err != nil {
 		return nil, err
@@ -448,7 +449,7 @@ func hExBars(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExMinute(_ *tdx.Pool, q url.Values) (any, error) {
+func hExMinute(_ *reliablePool, q url.Values) (any, error) {
 	market, code, err := parseExMarketCode(q)
 	if err != nil {
 		return nil, err
@@ -462,7 +463,7 @@ func hExMinute(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExHistMinute(_ *tdx.Pool, q url.Values) (any, error) {
+func hExHistMinute(_ *reliablePool, q url.Values) (any, error) {
 	market, code, date, err := parseExMarketCodeDate(q)
 	if err != nil {
 		return nil, err
@@ -476,7 +477,7 @@ func hExHistMinute(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExTrade(_ *tdx.Pool, q url.Values) (any, error) {
+func hExTrade(_ *reliablePool, q url.Values) (any, error) {
 	market, code, err := parseExMarketCode(q)
 	if err != nil {
 		return nil, err
@@ -498,7 +499,7 @@ func hExTrade(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExHistTrade(_ *tdx.Pool, q url.Values) (any, error) {
+func hExHistTrade(_ *reliablePool, q url.Values) (any, error) {
 	market, code, date, err := parseExMarketCodeDate(q)
 	if err != nil {
 		return nil, err
@@ -520,7 +521,7 @@ func hExHistTrade(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
-func hExBarsRange(_ *tdx.Pool, q url.Values) (any, error) {
+func hExBarsRange(_ *reliablePool, q url.Values) (any, error) {
 	market, code, err := parseExMarketCode(q)
 	if err != nil {
 		return nil, err
@@ -542,13 +543,36 @@ func hExBarsRange(_ *tdx.Pool, q url.Values) (any, error) {
 	})
 }
 
+var dialExClient = func() (*tdx.Client, error) {
+	return tdx.DialExHqHosts(rotateHosts(tdx.ExHosts), tdx.WithRedial(), tdx.WithLevel(tdx.LevelError))
+}
+
 func doEx(fn func(*tdx.Client) (any, error)) (any, error) {
-	c, err := tdx.DialExHqDefault(tdx.WithLevel(tdx.LevelError))
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for attempt := 1; attempt <= defaultRequestRetries; attempt++ {
+		c, err := dialExClient()
+		if err != nil {
+			lastErr = err
+			if attempt < defaultRequestRetries {
+				time.Sleep(time.Duration(attempt) * defaultRedialBackoff)
+			}
+			continue
+		}
+		result, err := fn(c)
+		closeClient(c)
+		if err == nil {
+			return result, nil
+		}
+		var re reqErr
+		if errors.As(err, &re) {
+			return nil, err
+		}
+		lastErr = err
+		if attempt < defaultRequestRetries {
+			time.Sleep(time.Duration(attempt) * defaultRedialBackoff)
+		}
 	}
-	defer c.Close()
-	return fn(c)
+	return nil, lastErr
 }
 
 var (

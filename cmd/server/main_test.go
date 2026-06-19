@@ -3,12 +3,15 @@ package main
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -178,5 +181,136 @@ func TestReqErrStatus(t *testing.T) {
 	var re reqErr
 	if !errors.As(badReq("bad"), &re) {
 		t.Fatal("badReq should return reqErr")
+	}
+}
+
+func TestDoPoolRedialsSynchronouslyAfterConnectionError(t *testing.T) {
+	var dials atomic.Int32
+	pool, err := newReliablePool(func() (*tdx.Client, error) {
+		dials.Add(1)
+		return &tdx.Client{}, nil
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	pool.getTimeout = 100 * time.Millisecond
+	pool.requestRetries = 3
+	pool.redialRetries = 1
+
+	var calls atomic.Int32
+	got, err := doPool(pool, func(*tdx.Client) (any, error) {
+		if calls.Add(1) == 1 {
+			return nil, errors.New("EOF")
+		}
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "ok" {
+		t.Fatalf("unexpected result: %#v", got)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected 2 handler calls, got %d", calls.Load())
+	}
+	if dials.Load() != 2 {
+		t.Fatalf("expected initial dial plus sync redial, got %d", dials.Load())
+	}
+}
+
+func TestDoPoolKeepsConnectionOnRequestError(t *testing.T) {
+	var dials atomic.Int32
+	pool, err := newReliablePool(func() (*tdx.Client, error) {
+		dials.Add(1)
+		return &tdx.Client{}, nil
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	pool.getTimeout = 100 * time.Millisecond
+
+	_, err = doPool(pool, func(*tdx.Client) (any, error) {
+		return nil, badReq("missing code")
+	})
+	if err == nil {
+		t.Fatal("expected bad request error")
+	}
+	var re reqErr
+	if !errors.As(err, &re) {
+		t.Fatalf("expected reqErr, got %T", err)
+	}
+
+	got, err := doPool(pool, func(*tdx.Client) (any, error) {
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "ok" {
+		t.Fatalf("unexpected result: %#v", got)
+	}
+	if dials.Load() != 1 {
+		t.Fatalf("bad request should not redial, got %d dials", dials.Load())
+	}
+}
+
+func TestReliablePoolGetTimesOut(t *testing.T) {
+	pool := &reliablePool{
+		ch:             make(chan *tdx.Client),
+		dial:           func() (*tdx.Client, error) { return &tdx.Client{}, nil },
+		getTimeout:     10 * time.Millisecond,
+		requestRetries: 1,
+		redialRetries:  1,
+		closed:         make(chan struct{}),
+	}
+	start := time.Now()
+	_, err := pool.Get()
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("pool get timeout took too long: %s", elapsed)
+	}
+}
+
+func TestRotateHostsSpreadsDialStart(t *testing.T) {
+	old := dialHostCursor.Load()
+	dialHostCursor.Store(0)
+	t.Cleanup(func() { dialHostCursor.Store(old) })
+
+	hosts := []string{"a", "b", "c"}
+	first := rotateHosts(hosts)
+	second := rotateHosts(hosts)
+	third := rotateHosts(hosts)
+	if fmt.Sprint(first) != "[a b c]" || fmt.Sprint(second) != "[b c a]" || fmt.Sprint(third) != "[c a b]" {
+		t.Fatalf("unexpected rotations: %v %v %v", first, second, third)
+	}
+}
+
+func TestDoExRetriesShortConnection(t *testing.T) {
+	oldDialEx := dialExClient
+	t.Cleanup(func() { dialExClient = oldDialEx })
+
+	var dials atomic.Int32
+	dialExClient = func() (*tdx.Client, error) {
+		if dials.Add(1) == 1 {
+			return nil, errors.New("connection refused")
+		}
+		return &tdx.Client{}, nil
+	}
+
+	got, err := doEx(func(*tdx.Client) (any, error) {
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "ok" {
+		t.Fatalf("unexpected result: %#v", got)
+	}
+	if dials.Load() != 2 {
+		t.Fatalf("expected 2 dials, got %d", dials.Load())
 	}
 }
