@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"sort"
 	"time"
 
 	"github.com/injoyai/logs"
@@ -19,7 +20,7 @@ func NewTimer(spec string, retry int, up Updater) error {
 		return err
 	}
 	cr := cron.New(cron.WithSeconds())
-	// 需要每天早上9点更新数据,8点多获取不到今天的数据
+	// 通过 spec 控制具体更新时间, 部分数据太早拉取会拿不到当天结果。
 	_, err = cr.AddFunc(spec, func() {
 		for i := 0; i == 0 || i < retry; i++ {
 			if err := up.Update(); err != nil {
@@ -37,14 +38,30 @@ func NewTimer(spec string, retry int, up Updater) error {
 	return nil
 }
 
-// NewUpdated 更新 hour=[9|15] minute=0
-func NewUpdated(db *xorms.Engine, hour, minute int) (*Updated, error) {
+// NewUpdated 更新 hour=[9|15] minute=0.
+// 额外的 hour/minute 成对传入, 用于一天内多个新鲜度检查节点。
+func NewUpdated(db *xorms.Engine, hour, minute int, extraHourMinutes ...int) (*Updated, error) {
 	err := db.Sync2(new(UpdateModel))
-	return &Updated{db: db, hour: hour, minute: minute}, err
+	u := &Updated{db: db}
+	u.nodes = append(u.nodes, updateNode{hour: hour, minute: minute})
+	for i := 0; i+1 < len(extraHourMinutes); i += 2 {
+		u.nodes = append(u.nodes, updateNode{hour: extraHourMinutes[i], minute: extraHourMinutes[i+1]})
+	}
+	sort.Slice(u.nodes, func(i, j int) bool {
+		if u.nodes[i].hour == u.nodes[j].hour {
+			return u.nodes[i].minute < u.nodes[j].minute
+		}
+		return u.nodes[i].hour < u.nodes[j].hour
+	})
+	return u, err
 }
 
 type Updated struct {
-	db     *xorms.Engine
+	db    *xorms.Engine
+	nodes []updateNode
+}
+
+type updateNode struct {
 	hour   int
 	minute int
 }
@@ -70,21 +87,27 @@ func (this *Updated) Updated(key string) (bool, error) {
 	}
 	{ //判断是否更新过,更新过则不更新
 		now := time.Now()
-		node := time.Date(now.Year(), now.Month(), now.Day(), this.hour, this.minute, 0, 0, time.Local)
+		node := this.latestNode(now)
 		updateTime := time.Unix(update.Time, 0)
-		if now.Sub(node) > 0 {
-			//当前时间在9点之后,且更新时间在9点之前,需要更新
-			if updateTime.Sub(node) < 0 {
-				return false, nil
-			}
-		} else {
-			//当前时间在9点之前,且更新时间在上个节点之前
-			if updateTime.Sub(node.Add(-time.Hour*24)) < 0 {
-				return false, nil
-			}
+		if updateTime.Before(node) {
+			return false, nil
 		}
 	}
 	return true, nil
+}
+
+func (this *Updated) latestNode(now time.Time) time.Time {
+	if len(this.nodes) == 0 {
+		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	}
+	for i := len(this.nodes) - 1; i >= 0; i-- {
+		node := time.Date(now.Year(), now.Month(), now.Day(), this.nodes[i].hour, this.nodes[i].minute, 0, 0, time.Local)
+		if !now.Before(node) {
+			return node
+		}
+	}
+	last := this.nodes[len(this.nodes)-1]
+	return time.Date(now.Year(), now.Month(), now.Day()-1, last.hour, last.minute, 0, 0, time.Local)
 }
 
 /*

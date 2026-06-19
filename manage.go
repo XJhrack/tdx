@@ -12,7 +12,7 @@ const (
 	DefaultRetry       = 3
 	DefaultDataDir     = "./data"
 	DefaultDatabaseDir = "./data/database"
-	DefaultCodesSpec   = "0 1 9 * * *"
+	DefaultCodesSpec   = "0 1 9,15 * * *"
 	DefaultWorkdaySpec = "0 3 9 * * *"
 	DefaultGbbqSpec    = "0 5 9 * * *"
 )

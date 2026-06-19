@@ -92,7 +92,7 @@ go run ./cmd/server [-addr :8001] [-pool 16] [-data ./data]
 #### `GET /api/codes/all` — 全量代码列表
 - 参数：`exchange`（必填）
 - 响应 `data`：同 `/api/codes`
-- 说明：服务端优先读取启动时维护的本地 `codes.db` 代码表缓存；缓存为空时才回退到通达信主站全量拉取。
+- 说明：服务端优先读取启动时维护的本地 `codes.db` 代码表缓存；缓存为空时才回退到通达信主站全量拉取。代码表启动时会检查更新，并在每天 `09:01`、`15:01` 定时刷新。
 
 #### `GET /api/codes/stocks` — 全部股票代码
 #### `GET /api/codes/etfs` — 全部 ETF 代码

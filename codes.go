@@ -129,7 +129,7 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 			return nil, err
 		}
 	}
-	cs.updated, err = NewUpdated(cs.db, 9, 0)
+	cs.updated, err = NewUpdated(cs.db, 9, 0, 15, 0)
 	if err != nil {
 		return nil, err
 	}
