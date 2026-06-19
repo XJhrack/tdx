@@ -60,7 +60,11 @@ func hFinance(pool *reliablePool, q url.Values) (any, error) {
 		return nil, err
 	}
 	return doPool(pool, func(c *tdx.Client) (any, error) {
-		return c.GetFinanceInfo(ex, code)
+		info, err := c.GetFinanceInfo(ex, code)
+		if err != nil {
+			return nil, err
+		}
+		return toFinanceInfo(info), nil
 	})
 }
 
@@ -70,7 +74,11 @@ func hCompanyCategories(pool *reliablePool, q url.Values) (any, error) {
 		return nil, err
 	}
 	return doPool(pool, func(c *tdx.Client) (any, error) {
-		return c.GetCompanyCategory(ex, code)
+		list, err := c.GetCompanyCategory(ex, code)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"count": len(list), "list": toCompanyCategories(list)}, nil
 	})
 }
 
@@ -127,7 +135,7 @@ func hBlockData(pool *reliablePool, q url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(blocks), "list": blocks}, nil
+		return map[string]any{"count": len(blocks), "list": toBlocks(blocks)}, nil
 	})
 }
 
@@ -141,7 +149,7 @@ func hBlockDataWithIndex(pool *reliablePool, q url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(blocks), "list": blocks}, nil
+		return map[string]any{"count": len(blocks), "list": toBlocks(blocks)}, nil
 	})
 }
 
@@ -179,7 +187,7 @@ func hTdxZs(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(list), "list": list}, nil
+		return map[string]any{"count": len(list), "list": toTdxZsList(list)}, nil
 	})
 }
 
@@ -189,7 +197,7 @@ func hTdxBk(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(list), "list": list}, nil
+		return map[string]any{"count": len(list), "list": toTdxBkList(list)}, nil
 	})
 }
 
@@ -199,7 +207,7 @@ func hTdxHy(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(list), "list": list}, nil
+		return map[string]any{"count": len(list), "list": toTdxHyList(list)}, nil
 	})
 }
 
@@ -209,7 +217,7 @@ func hTdxStat(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(list), "list": list}, nil
+		return map[string]any{"count": len(list), "list": toTdxStats(list)}, nil
 	})
 }
 
@@ -219,7 +227,7 @@ func hTdxStat2(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(list), "list": list}, nil
+		return map[string]any{"count": len(list), "list": toTdxStat2s(list)}, nil
 	})
 }
 
@@ -240,7 +248,7 @@ func hXgsg(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(list), "list": list}, nil
+		return map[string]any{"count": len(list), "list": toXgsgs(list)}, nil
 	})
 }
 
@@ -250,7 +258,7 @@ func hGbbqAll(pool *reliablePool, _ url.Values) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"count": len(resp), "items": resp}, nil
+		return map[string]any{"count": len(resp), "items": toGbbqItems(resp)}, nil
 	})
 }
 
@@ -263,7 +271,7 @@ func hGbbqEquity(_ *reliablePool, q url.Values) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return gb.GetEquity(code, date), nil
+	return toEquity(gb.GetEquity(code, date)), nil
 }
 
 func hGbbqXRXD(_ *reliablePool, q url.Values) (any, error) {
@@ -761,6 +769,233 @@ func rawFileResp(file string, raw []byte) map[string]any {
 		"file":   file,
 		"size":   len(raw),
 		"base64": base64.StdEncoding.EncodeToString(raw),
+	}
+}
+
+func toFinanceInfo(f *protocol.FinanceInfo) map[string]any {
+	if f == nil {
+		return nil
+	}
+	return map[string]any{
+		"market":             f.Market,
+		"code":               f.Code,
+		"liuTongGuBen":       f.LiuTongGuBen,
+		"province":           f.Province,
+		"industry":           f.Industry,
+		"updatedDate":        f.UpdatedDate,
+		"ipoDate":            f.IPODate,
+		"zongGuBen":          f.ZongGuBen,
+		"guoJiaGu":           f.GuoJiaGu,
+		"faQiRenFaRenGu":     f.FaQiRenFaRenGu,
+		"faRenGu":            f.FaRenGu,
+		"bGu":                f.BGu,
+		"hGu":                f.HGu,
+		"zhiGongGu":          f.ZhiGongGu,
+		"zongZiChan":         f.ZongZiChan,
+		"liuDongZiChan":      f.LiuDongZiChan,
+		"guDingZiChan":       f.GuDingZiChan,
+		"wuXingZiChan":       f.WuXingZiChan,
+		"guDongRenShu":       f.GuDongRenShu,
+		"liuDongFuZhai":      f.LiuDongFuZhai,
+		"changQiFuZhai":      f.ChangQiFuZhai,
+		"ziBenGongJiJin":     f.ZiBenGongJiJin,
+		"jingZiChan":         f.JingZiChan,
+		"zhuYingShouRu":      f.ZhuYingShouRu,
+		"zhuYingLiRun":       f.ZhuYingLiRun,
+		"yingShouZhangKuan":  f.YingShouZhangKuan,
+		"yingYeLiRun":        f.YingYeLiRun,
+		"touZiShouYi":        f.TouZiShouYi,
+		"jingYingXianJinLiu": f.JingYingXianJinLiu,
+		"zongXianJinLiu":     f.ZongXianJinLiu,
+		"cunHuo":             f.CunHuo,
+		"liRunZongHe":        f.LiRunZongHe,
+		"shuiHouLiRun":       f.ShuiHouLiRun,
+		"jingLiRun":          f.JingLiRun,
+		"weiFenLiRun":        f.WeiFenLiRun,
+		"baoLiu1":            f.BaoLiu1,
+		"baoLiu2":            f.BaoLiu2,
+	}
+}
+
+func toCompanyCategories(list []protocol.CompanyCategory) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, c := range list {
+		out = append(out, map[string]any{
+			"name":     c.Name,
+			"filename": c.Filename,
+			"start":    c.Start,
+			"length":   c.Length,
+		})
+	}
+	return out
+}
+
+func toBlocks(list []*protocol.Block) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, b := range list {
+		if b == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":  b.Name,
+			"index": b.Index,
+			"type":  b.Type,
+			"codes": b.Codes,
+		})
+	}
+	return out
+}
+
+func toTdxZsList(list []*protocol.TdxZs) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, z := range list {
+		if z == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":    z.Name,
+			"code":    z.Code,
+			"type":    z.Type,
+			"subType": z.SubType,
+			"ref":     z.Ref,
+		})
+	}
+	return out
+}
+
+func toTdxBkList(list []*protocol.TdxBk) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, b := range list {
+		if b == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"short": b.Short,
+			"full":  b.Full,
+		})
+	}
+	return out
+}
+
+func toTdxHyList(list []*protocol.TdxHy) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, h := range list {
+		if h == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"market": h.Market,
+			"code":   h.Code,
+			"tdxHy":  h.TdxHy,
+			"swHy":   h.SwHy,
+		})
+	}
+	return out
+}
+
+func toTdxStats(list []*protocol.TdxStat) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, s := range list {
+		if s == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"market":    s.Market,
+			"code":      s.Code,
+			"date":      s.Date,
+			"peTtm":     s.PETTM,
+			"trendDays": s.TrendDays,
+			"changePct": s.ChangePct,
+			"peStatic":  s.PEStatic,
+			"divYield":  s.DivYield,
+			"chg5":      s.Chg5,
+			"chg10":     s.Chg10,
+			"chg20":     s.Chg20,
+			"chg60":     s.Chg60,
+			"chgYtd":    s.ChgYTD,
+			"fields":    s.Fields,
+		})
+	}
+	return out
+}
+
+func toTdxStat2s(list []*protocol.TdxStat2) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, s := range list {
+		if s == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"market":     s.Market,
+			"code":       s.Code,
+			"date":       s.Date,
+			"blockIndex": s.BlockIndex,
+			"amount":     s.Amount,
+			"amountPrev": s.AmountPrev,
+			"ipoPrice":   s.IPOPrice,
+			"high52w":    s.High52W,
+			"low52w":     s.Low52W,
+			"fields":     s.Fields,
+		})
+	}
+	return out
+}
+
+func toXgsgs(list []*protocol.TdxXgsg) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, x := range list {
+		if x == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"market":     x.Market,
+			"code":       x.Code,
+			"date":       x.Date,
+			"issuePrice": x.IssuePrice,
+			"name":       x.Name,
+			"fields":     x.Fields,
+		})
+	}
+	return out
+}
+
+func toGbbqItems(items map[string][]*protocol.Gbbq) map[string][]map[string]any {
+	out := make(map[string][]map[string]any, len(items))
+	for code, list := range items {
+		out[code] = toGbbqs(list)
+	}
+	return out
+}
+
+func toGbbqs(list []*protocol.Gbbq) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, g := range list {
+		if g == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"code":     g.Code,
+			"time":     fmtTime(g.Time),
+			"category": g.Category,
+			"c1":       g.C1,
+			"c2":       g.C2,
+			"c3":       g.C3,
+			"c4":       g.C4,
+		})
+	}
+	return out
+}
+
+func toEquity(e *protocol.Equity) map[string]any {
+	if e == nil {
+		return nil
+	}
+	return map[string]any{
+		"category": e.Category,
+		"code":     e.Code,
+		"time":     fmtTime(e.Time),
+		"float":    e.Float,
+		"total":    e.Total,
 	}
 }
 

@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -174,6 +176,90 @@ func TestRawFileAndFactorDTOs(t *testing.T) {
 	}
 	if factors[0]["time"] != "2026-06-19 15:00:00" {
 		t.Fatalf("unexpected time: %#v", factors[0]["time"])
+	}
+}
+
+func TestExtendedDTOsUseCamelCase(t *testing.T) {
+	tm := time.Date(2026, 6, 19, 15, 0, 0, 0, time.Local)
+	payload := map[string]any{
+		"finance": toFinanceInfo(&protocol.FinanceInfo{
+			Market:         1,
+			Code:           "600000",
+			LiuTongGuBen:   100,
+			IPODate:        19991110,
+			ZongGuBen:      200,
+			GuDongRenShu:   300,
+			JingLiRun:      400,
+			ZhuYingShouRu:  500,
+			UpdatedDate:    20260331,
+			ShuiHouLiRun:   600,
+			WeiFenLiRun:    700,
+			ChangQiFuZhai:  800,
+			JingZiChan:     900,
+			LiuDongFuZhai:  1000,
+			ZongXianJinLiu: 1100,
+		}),
+		"categories": toCompanyCategories([]protocol.CompanyCategory{{
+			Name: "profile", Filename: "600000.txt", Start: 1, Length: 2,
+		}}),
+		"blocks": toBlocks([]*protocol.Block{{
+			Name: "battery", Index: "880001", Type: 5, Codes: []string{"0600000"},
+		}}),
+		"tdxZs": toTdxZsList([]*protocol.TdxZs{{
+			Name: "battery concept", Code: "880001", Type: 5, SubType: 2, Ref: "battery",
+		}}),
+		"tdxBk": toTdxBkList([]*protocol.TdxBk{{Short: "battery", Full: "battery concept"}}),
+		"tdxHy": toTdxHyList([]*protocol.TdxHy{{
+			Market: 1, Code: "600000", TdxHy: "T01", SwHy: "X01",
+		}}),
+		"stat": toTdxStats([]*protocol.TdxStat{{
+			Market: 1, Code: "600000", Date: "20260619", PETTM: 8.8, PEStatic: 9.9,
+			TrendDays: 3, ChangePct: 1.2, DivYield: 4.5, Chg5: 5, Chg10: 10,
+			Chg20: 20, Chg60: 60, ChgYTD: 12.3, Fields: []string{"raw"},
+		}}),
+		"stat2": toTdxStat2s([]*protocol.TdxStat2{{
+			Market: 1, Code: "600000", Date: "20260619", BlockIndex: "880001",
+			Amount: 100, AmountPrev: 90, IPOPrice: 10.5, High52W: 15.5,
+			Low52W: 8.5, Fields: []string{"raw"},
+		}}),
+		"xgsg": toXgsgs([]*protocol.TdxXgsg{{
+			Market: 1, Code: "730000", Date: "20260619", IssuePrice: 8.88,
+			Name: "ipo", Fields: []string{"raw"},
+		}}),
+		"gbbq": toGbbqItems(map[string][]*protocol.Gbbq{
+			"sh600000": {{Code: "sh600000", Time: tm, Category: 1, C1: 1, C2: 2, C3: 3, C4: 4}},
+		}),
+		"equity": toEquity(&protocol.Equity{
+			Category: 5, Code: "sh600000", Time: tm, Float: 1000, Total: 2000,
+		}),
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	wantKeys := []string{
+		`"liuTongGuBen"`, `"ipoDate"`, `"zongGuBen"`, `"guDongRenShu"`,
+		`"blockIndex"`, `"tdxHy"`, `"swHy"`, `"peTtm"`, `"peStatic"`,
+		`"divYield"`, `"chgYtd"`, `"issuePrice"`, `"subType"`,
+		`"float"`, `"total"`,
+	}
+	for _, key := range wantKeys {
+		if !strings.Contains(body, key) {
+			t.Fatalf("expected camelCase key %s in %s", key, body)
+		}
+	}
+	forbiddenKeys := []string{
+		`"LiuTongGuBen"`, `"IPODate"`, `"ZongGuBen"`, `"GuDongRenShu"`,
+		`"Market"`, `"Code"`, `"BlockIndex"`, `"TdxHy"`, `"SwHy"`,
+		`"PETTM"`, `"PEStatic"`, `"DivYield"`, `"ChgYTD"`, `"IssuePrice"`,
+		`"SubType"`, `"Float"`, `"Total"`,
+	}
+	for _, key := range forbiddenKeys {
+		if strings.Contains(body, key) {
+			t.Fatalf("unexpected PascalCase key %s in %s", key, body)
+		}
 	}
 }
 
