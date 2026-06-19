@@ -34,11 +34,14 @@ var klineTypeMap = map[string]uint8{
 	"year":    protocol.TypeKlineYear,
 }
 
+var serverDataDir = "./data"
+
 func main() {
 	addr := flag.String("addr", ":8001", "HTTP listen address")
 	poolSize := flag.Int("pool", 16, "TDX connection pool size")
 	dataDir := flag.String("data", "./data", "data directory for SQLite databases")
 	flag.Parse()
+	serverDataDir = *dataDir
 
 	pool, err := tdx.NewPool(dialClient, *poolSize)
 	if err != nil {
@@ -142,6 +145,7 @@ func registerRoutes(mux *http.ServeMux, pool *tdx.Pool) {
 	reg("/api/index/kline/all", hIndexKlineAll)
 	reg("/api/auction", hAuction)
 	reg("/api/gbbq", hGbbq)
+	registerExtendedRoutes(reg)
 }
 
 // --- handlers ---
